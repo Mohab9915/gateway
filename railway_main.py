@@ -25,101 +25,224 @@ import jwt
 
 logger = structlog.get_logger()
 
-# Palestinian/Jordanian dialect response generator
-def generate_palestinian_response(original_text: str, intent: str, entities: list = None, language: str = "en") -> str:
-    """Generate natural human-like responses in Palestinian/Jordanian dialect"""
+# Advanced AI Response Generator using Qwen model
+async def generate_human_response(original_text: str, intent: str, entities: list = None, language: str = "en") -> str:
+    """Generate truly human-like responses using Qwen model with Palestinian/Jordanian personality"""
 
-    # Extract entities for more personalized responses
-    product_mentioned = None
-    price_mentioned = None
+    # OpenRouter API configuration
+    global OPENROUTER_API_KEY
 
+    # Extract entities for context
+    entity_context = ""
     if entities:
-        for entity in entities:
-            if entity.get('type') == 'product':
-                product_mentioned = entity.get('text')
-            elif entity.get('type') == 'price':
-                price_mentioned = entity.get('text')
+        entity_context = "\nContext: User mentioned: " + ", ".join([f"{e.get('text')} ({e.get('type')})" for e in entities[:3]])
 
-    # Palestinian/Jordanian dialect responses
-    if intent == "greeting":
-        greetings = [
-            "أهلاً وسهلاً! كيفك؟ أنا هنا عشان ساعدك 😊",
-            "يا هلا! شو أخبارك؟ تفضل اسأل وش تحب",
-            "أهلاً بيكم! شسوي لك اليوم؟",
-            "مرحباً! كيف يمكنني أخدمك؟"
-        ]
-        return random.choice(greetings)
+    # Advanced prompt for human-like Palestinian personality
+    prompt = f"""You are a Palestinian/Jordanian shop owner named "Abu Ahmad" - you run a small electronics shop in Amman. You're 45 years old, friendly, warm, and speak naturally with Palestinian/Jordanian dialect and cultural expressions.
 
-    elif intent == "product_inquiry":
-        if product_mentioned:
-            if "لابتوب" in product_mentioned.lower() or "كمبيوتر" in product_mentioned.lower():
-                responses = [
-                    f"الله! شغلة اللابتوب؟ عندي أحسن انواع وأسعار كويسة! شو نوع بدك بالضبط؟",
-                    f"يلا أخي! اللابتوبات كلها عندي. شو مواصفات تدور عليها؟",
-                    f"أكيد! اللابتوبات حاضرة. كم تحب تدفع تقريباً؟"
-                ]
-                return random.choice(responses)
-            elif "موبايل" in product_mentioned.lower() or "هاتف" in product_mentioned.lower():
-                responses = [
-                    f"الموبايلات كلها موجودة! يا حليلك، شو مودل بدك؟",
-                    f"أكيد! عندي أحدث الموبايلات. شو ميزات تدور عليها؟",
-                    f"يلا صاحبي! الموبايلات حاضرة. شو نوع بدك؟"
-                ]
-                return random.choice(responses)
-        return "أكيد! شو نوع السلعة تدور عليها؟ بفهمك اللي بدك بالضبط"
+Your personality:
+- Warm and welcoming, uses "يا هلا", "أهلاً", "برافو عليك" naturally
+- Uses Palestinian/Jordanian expressions like "يا حليلك", "شغل شايب", "لأ ولأ"
+- Negotiates prices naturally like a real shop owner
+- Sometimes switches to English for tech terms but mostly Arabic
+- Never sounds like a robot or template - always natural and conversational
+- Uses emojis naturally and sparingly 😊 👍
+- Occasionally uses cultural references and local expressions
 
-    elif intent == "price_inquiry":
-        if price_mentioned:
-            responses = [
-                f"هووو! {price_mentioned} شغلة حلوة! ممكن ألاقيك أفضل من هيك بس حسب المواصفات",
-                f"مش سيئ السعر! ممكن نتفاوض شوي. شو المواصفات كلها؟",
-                f"يسلمو! {price_mentioned} بس ممكن نعمل خصم لو بتيجي كمية"
-            ]
-            return random.choice(responses)
-        return "الأسعار كويسة جداً! شو بتحب تعرف سعره بالضبط؟"
+Customer message: "{original_text}"
+Detected intent: {intent}{entity_context}
 
-    elif intent == "support_request":
-        responses = [
-            "لأ ولأ! شو المشكلة؟ أنا هنا أحلها لك حالاً",
-            "يا حبيبي! وش قاعد؟ إكتبلي المشكلة وبحلها لك",
-            "خليك بخير! شو في الأمر؟ بكل سرور أساعدك"
-        ]
-        return random.choice(responses)
+Respond naturally as Abu Ahmad would - short, friendly, human-like response. Don't be overly formal or use templates. Just talk like a real shop owner would."""
 
-    elif intent == "order_status":
-        responses = [
-            "يلا خيي! شو رقم طلبك؟ بفحصلك حالاً",
-            "أكيد! شو رقم الطلب؟ بعملك فحص سريع",
-            "طيب! رقم الطلب بلازمني شوي"
-        ]
-        return random.choice(responses)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://railway.app",
+                    "X-Title": "Palestinian Chatbot"
+                },
+                json={
+                    "model": "qwen/qwen-2.5-coder-32b-instruct",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are Abu Ahmad, a Palestinian/Jordanian electronics shop owner. Be natural, warm, and use authentic dialect. Never sound like a bot or template."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.9,
+                    "max_tokens": 150,
+                    "top_p": 0.95,
+                    "frequency_penalty": 0.2,
+                    "presence_penalty": 0.1
+                }
+            )
 
-    elif intent == "buying_intent":
-        responses = [
-            "برافو عليك! ماشي الله! شو بدك تشتري بالضبط؟",
-            "يا سلما! هون المكان صح! شو عندك بالزمن؟",
-            "شغل شايب! أكيد بخدمك! شو السلعة اللي بدك؟"
-        ]
-        return random.choice(responses)
+            if response.status_code == 200:
+                result = response.json()
+                ai_response = result["choices"][0]["message"]["content"].strip()
 
-    else:  # Default/fallback
-        # Try to detect if original text is in Arabic
-        if any(char in original_text for char in 'ابتجحخدرزسشصضطظعغفقكلمنهوىي'):
-            arabic_responses = [
-                "فهمتك قصدك! تفضل اكتبلي بشكل ثاني عشان أفهمك أفضل",
-                "يا هلا! بكل سرور أساعدك. عادي توضح أكثر",
-                "خليك بخير! شو بدك بالضبط؟ أنا جاهز"
-            ]
-            return random.choice(arabic_responses)
-        else:
-            english_responses = [
-                "Gotcha! Let me help you with that. What exactly do you need?",
-                "Sure thing! How can I assist you today?",
-                "I got you covered! Tell me more about what you're looking for"
-            ]
-            return random.choice(english_responses)
+                # Clean up the response - remove any obvious AI patterns
+                ai_response = ai_response.replace("As Abu Ahmad", "").replace("As a shop owner", "")
+                ai_response = ai_response.replace("I would say", "").replace("Let me think", "")
+                ai_response = re.sub(r'\[.*?\]', '', ai_response)  # Remove bracketed content
+                ai_response = ai_response.strip()
+
+                return ai_response if ai_response else "يا هلا! كيف يمكنني أخدمك؟"
+            else:
+                logger.warning("OpenRouter API error", status=response.status_code, response=response.text)
+                return get_fallback_palestinian_response(original_text, intent, entities)
+
+    except Exception as e:
+        logger.error("Failed to generate AI response", error=str(e)
+        return get_fallback_palestinian_response(original_text, intent, entities)
+
+def get_fallback_palestinian_response(original_text: str, intent: str, entities: list = None) -> str:
+    """Fallback responses when AI is not available"""
+
+    # More natural fallback responses
+    responses = {
+        "greeting": ["يا هلا! كيفك؟ تفضل اكتب لي", "أهلاً وسهلا! شو بدك بالزمن؟", "مرحباً! شو أخبارك؟"],
+        "product_inquiry": ["شو بتدور عليه بالضبط؟ عندي كل شء", "يلا! شو نوع السلعة؟ بفهمك اللي بدك", "أكيد! شو المودل أو النوع؟"],
+        "price_inquiry": ["الأسعار كويسة جداً! شو الميزان بتدور عليه؟", "الأمور زينة! شو ميزاتك؟", "برافو! شو المواصفات كلها؟"],
+        "support_request": ["لأ ولأ! شو المشكلة؟ أنا موجود", "يا حبيبي! إكتب لي القصة", "خليك بخير! شو في الأمر؟"],
+        "buying_intent": ["برافو! هون المكان صح! شو بتحب؟", "ماشي الله! شو بدك بالضبط؟", "يلا صاحبي! شو عندك بالزمن؟"],
+    }
+
+    # Detect if Arabic text
+    is_arabic = any(char in original_text for char in 'ابتجحخدرزسشصضطظعغفقكلمنهوىي')
+
+    if intent in responses:
+        return random.choice(responses[intent])
+    elif is_arabic:
+        return random.choice(["يا هلا! كيف يمكنني أخدمك؟", "شو بدك بالضبط؟ بكل سرور أساعدك", "تفضل! كيف أقدر أساعدك؟"])
+    else:
+        return random.choice(["Hey there! How can I help you today?", "What can I do for you?", "Welcome! What are you looking for?"])
+
+# Backward compatibility function
+def generate_palestinian_response(original_text: str, intent: str, entities: list = None, language: str = "en") -> str:
+    """Wrapper for the async function - simplified version for now"""
+    # For now return a fallback response, the actual AI generation is async
+    return get_fallback_palestinian_response(original_text, intent, entities)
+
+import re
 
 import random
+
+# Flexible Specialist Response Generator
+async def generate_specialist_response(
+    original_text: str,
+    intent: str,
+    entities: list = None,
+    language: str = "en",
+    product_info: str = "",
+    product_name: str = "منتج",
+    specialist_name: str = "خالد"
+) -> str:
+    """Generate response as configurable specialist using Qwen model"""
+
+    global OPENROUTER_API_KEY
+
+    entity_context = ""
+    if entities:
+        entity_context = "\nالمعلومات المذكورة: " + ", ".join([f"{e.get('text')} ({e.get('type')})" for e in entities[:3]])
+
+    prompt = f"""أنت {specialist_name}، متخصص خدمة عملاء فلسطيني محترف. شغلك الرد على استفسارات الزبائن عن: {product_name}.
+
+شخصيتك:
+- اسمك {specialist_name}، متخصص في هذا المنتج
+- تتحدث باللهجة الفلسطينية الطبيعية
+- أسلوبك مهني وبسيط، لغة واضحة ومباشرة
+- دائماً ودود ومساعد
+
+قواعد مهمة:
+- رد دائماً عن المنتج المذكور فقط
+- استخدم معلومات المنتج المعتمدة
+- رد باللهجة الفلسطينية
+- كن مهني وبسيط
+- لا تخلق معلومات غير موجودة
+
+معلومات المنتج:
+{product_info}
+
+رسالة الزبون: "{original_text}"
+النية المحتسبة: {intent}{entity_context}
+
+رد كـ{specialist_name} - استخدم اللهجة الفلسطينية المهنية، كن دقيقاً، رد بشكل طبيعي وودود.
+
+مهم جداً: رد قصير جداً (جملة أو جملتين كحد أقصى)، مباشر، ومختصر. فقط أجب عن السؤال مباشرة."""
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://railway.app",
+                    "X-Title": f"{specialist_name} - Specialist"
+                },
+                json={
+                    "model": "qwen/qwen-2.5-coder-32b-instruct",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": f"أنت {specialist_name}، متخصص خدمة عملاء فلسطيني. رد قصير ومباشر باللهجة الفلسطينية. لا تطيل ولا تشرح."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "temperature": 0.5,
+                    "max_tokens": 80,
+                    "top_p": 0.8,
+                    "frequency_penalty": 0.3,
+                    "presence_penalty": 0.2
+                }
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                ai_response = result["choices"][0]["message"]["content"].strip()
+                ai_response = ai_response.replace(f"كـ{specialist_name}", "").replace(f"أنا {specialist_name}", "")
+                ai_response = ai_response.replace("أود أن أقول", "")
+                ai_response = re.sub(r'\[.*?\]', '', ai_response)
+                ai_response = ai_response.strip()
+                return ai_response if ai_response else f"أهلاً بك! كيف يمكنني أخدمك؟"
+            else:
+                logger.warning("OpenRouter API error", status=response.status_code)
+                return get_specialist_fallback_response(original_text, intent, specialist_name)
+
+    except Exception as e:
+        logger.error("Failed to generate specialist response", error=str(e))
+        return get_specialist_fallback_response(original_text, intent, specialist_name)
+
+def get_specialist_fallback_response(original_text: str, intent: str, specialist_name: str = "خالد") -> str:
+    """Fallback responses for specialist when AI is not available"""
+
+    responses = {
+        "greeting": [f"أهلاً بك! أنا {specialist_name}، كيف يمكنني أخدمك؟"],
+        "product_inquiry": ["أكيد! شو بدك تعرف عن المنتج؟"],
+        "price_inquiry": ["الأسعار كويسة جداً! شو بتحب تعرف؟"],
+        "support_request": ["لاء ولأ! شو المشكلة؟ أنا موجود."],
+        "buying_intent": ["ماشي الله! هون المكان صح."],
+    }
+
+    is_arabic = any(char in original_text for char in 'ابتجحخدرزسشصضطظعغفقكلمنهوىي')
+
+    if intent in responses:
+        return responses[intent][0]
+    elif is_arabic:
+        return "أهلاً بك! كيف يمكنني أخدمك؟"
+    else:
+        return "Hello! How can I help you?"
 
 # Environment variables
 PORT = os.getenv("PORT", "8000")
@@ -127,6 +250,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-this-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "24"))
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "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")
 
 # Service URLs (will be provided by Railway internal networking)
 MESSAGE_PROCESSOR_URL = os.getenv("MESSAGE_PROCESSOR_URL", "http://message_processor:8001")
@@ -727,14 +851,49 @@ async def facebook_webhook_handler(request: Request):
 
                     ai_result = ai_response.json()
 
-                    # Step 2: Generate natural human-like response in Arabic/Palestinian dialect
+                    # Step 2: Forward to AI-NLP service for response generation
                     intent = ai_result['results']['intent']['intent']
                     entities = ai_result['results'].get('entities', {}).get('entities', [])
                     detected_language = ai_result['results'].get('language', {}).get('language', 'en')
                     original_text = message["text"]
 
-                    # Generate natural Palestinian/Jordanian dialect response
-                    bot_response = generate_palestinian_response(original_text, intent, entities, detected_language)
+                    # Get configurable product info from environment
+                    product_info = os.getenv("PRODUCT_INFO", "")
+                    product_name = os.getenv("PRODUCT_NAME", "منتج")
+                    specialist_name = os.getenv("SPECIALIST_NAME", "خالد")
+
+                    # Forward to AI-NLP service for response generation
+                    ai_nlp_url = os.getenv("AI_NLP_URL", "https://ai-nlp-service-production.up.railway.app")
+
+                    response_data = {
+                        "text": original_text,
+                        "intent": intent,
+                        "entities": entities,
+                        "language": detected_language,
+                        "product_info": product_info,
+                        "product_name": product_name,
+                        "specialist_name": specialist_name,
+                        "task": "generate_response"
+                    }
+
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            ai_response = await client.post(
+                                f"{ai_nlp_url}/api/v1/generate-response",
+                                json=response_data,
+                                timeout=30.0
+                            )
+
+                            if ai_response.status_code == 200:
+                                result = ai_response.json()
+                                bot_response = result.get("response", "أهلاً بك! كيف يمكنني أخدمك؟")
+                            else:
+                                logger.warning("AI-NLP service error", status=ai_response.status_code, response=ai_response.text)
+                                bot_response = "خدمة الذكاء الاصطناعي غير متاحة حالياً. برجع لاحقاً."
+
+                    except Exception as e:
+                        logger.error("Failed to call AI-NLP service", error=str(e))
+                        bot_response = "حدث خطأ في معالجة الطلب. برجع لاحقاً."
 
                     responses.append({
                         "recipient_id": message["sender_id"],
@@ -744,7 +903,7 @@ async def facebook_webhook_handler(request: Request):
                         "confidence": ai_result['results']['intent']['confidence']
                     })
 
-                    logger.info("Natural response generated",
+                    logger.info("AI-powered response generated",
                                sender_id=message["sender_id"],
                                original_text=original_text,
                                intent=intent,
@@ -763,6 +922,8 @@ async def facebook_webhook_handler(request: Request):
                     "error": str(e)
                 })
 
+        # For Facebook webhooks, we need to return a structured response
+        # But the actual response content should be in the message_text field
         return {
             "status": "ok",
             "messages_processed": len(messages),
