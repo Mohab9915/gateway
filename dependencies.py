@@ -18,6 +18,13 @@ logger = get_service_logger("gateway-dependencies")
 security = HTTPBearer(auto_error=False)
 
 
+async def webhook_rate_limit(request: Request) -> bool:
+    """Rate limiting for webhook endpoints"""
+    # For now, allow all webhook requests
+    # TODO: Implement proper rate limiting
+    return True
+
+
 async def verify_api_key(request: Request) -> bool:
     """Verify API key for protected endpoints"""
 

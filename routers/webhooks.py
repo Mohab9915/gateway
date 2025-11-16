@@ -9,16 +9,30 @@ import hmac
 import json
 import time
 import httpx
+import os
 
-from shared.config.settings import get_settings
-from shared.utils.logger import get_service_logger, WebhookLogger
-from shared.models.database import PlatformType
 from ..dependencies import verify_api_key, webhook_rate_limit
-from ..exceptions import ValidationException, AuthenticationException
 
-settings = get_settings("gateway")
-logger = get_service_logger("webhooks")
-webhook_logger = WebhookLogger(logger)
+# Simple configuration
+settings = type('Settings', (), {
+    'facebook_verify_token': os.getenv("FACEBOOK_VERIFY_TOKEN", "test-verify-token-12345"),
+    'facebook_app_secret': os.getenv("FACEBOOK_APP_SECRET", ""),
+    'message_processor_url': "https://messageprocessor-production.up.railway.app",
+    'ai_nlp_service_url': "https://ai-nlp-service-production.up.railway.app"
+})()
+
+# Simple logger
+class SimpleLogger:
+    def info(self, msg, **kwargs):
+        print(f"INFO: {msg} {kwargs}")
+
+    def warning(self, msg, **kwargs):
+        print(f"WARNING: {msg} {kwargs}")
+
+    def error(self, msg, **kwargs):
+        print(f"ERROR: {msg} {kwargs}")
+
+logger = SimpleLogger()
 
 router = APIRouter()
 
@@ -93,14 +107,10 @@ async def facebook_webhook_handler(
         if settings.facebook_app_secret:
             signature = request.headers.get("x-hub-signature-256", "")
             if not verify_facebook_signature(body, signature, settings.facebook_app_secret):
-                raise AuthenticationException("Invalid webhook signature")
+                raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
         # Log webhook receipt
-        webhook_logger.log_webhook_received(
-            platform="facebook",
-            webhook_type="messages",
-            payload_size=payload_size
-        )
+        logger.info(f"Facebook webhook received", platform="facebook", payload_size=payload_size)
 
         # Extract messages from payload
         messages = extract_facebook_messages(payload)
@@ -116,36 +126,19 @@ async def facebook_webhook_handler(
         processing_time = time.time() - start_time
 
         # Log successful processing
-        webhook_logger.log_webhook_processed(
-            platform="facebook",
-            webhook_type="messages",
-            processing_time=processing_time,
-            messages_extracted=messages_count
-        )
+        logger.info(f"Facebook webhook processed",
+                   platform="facebook",
+                   processing_time=processing_time,
+                   messages_extracted=messages_count)
 
         return {"status": "received", "messages_count": messages_count}
 
-    except AuthenticationException as e:
-        webhook_logger.log_webhook_error(
-            platform="facebook",
-            webhook_type="auth",
-            error=str(e)
-        )
+    except HTTPException as e:
+        logger.error(f"Facebook webhook HTTP error: {str(e)}")
         raise
     except Exception as e:
         processing_time = time.time() - start_time
-        webhook_logger.log_webhook_error(
-            platform="facebook",
-            webhook_type="messages",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        logger.error(
-            "facebook_webhook_processing_error",
-            error=str(e),
-            processing_time=processing_time,
-            exc_info=True
-        )
+        logger.error(f"Facebook webhook processing error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed"
@@ -216,11 +209,7 @@ async def whatsapp_webhook_handler(
             )
 
         # Log webhook receipt
-        webhook_logger.log_webhook_received(
-            platform="whatsapp",
-            webhook_type="messages",
-            payload_size=payload_size
-        )
+        logger.info(f"WhatsApp webhook received", platform="whatsapp", payload_size=payload_size)
 
         # Extract messages from payload
         messages = extract_whatsapp_messages(payload)
@@ -236,29 +225,16 @@ async def whatsapp_webhook_handler(
         processing_time = time.time() - start_time
 
         # Log successful processing
-        webhook_logger.log_webhook_processed(
-            platform="whatsapp",
-            webhook_type="messages",
-            processing_time=processing_time,
-            messages_extracted=messages_count
-        )
+        logger.info(f"WhatsApp webhook processed",
+                   platform="whatsapp",
+                   processing_time=processing_time,
+                   messages_extracted=messages_count)
 
         return {"status": "received", "messages_count": messages_count}
 
     except Exception as e:
         processing_time = time.time() - start_time
-        webhook_logger.log_webhook_error(
-            platform="whatsapp",
-            webhook_type="messages",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        logger.error(
-            "whatsapp_webhook_processing_error",
-            error=str(e),
-            processing_time=processing_time,
-            exc_info=True
-        )
+        logger.error(f"WhatsApp webhook processing error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed"
@@ -295,11 +271,7 @@ async def instagram_webhook_handler(
             )
 
         # Log webhook receipt
-        webhook_logger.log_webhook_received(
-            platform="instagram",
-            webhook_type="messages",
-            payload_size=payload_size
-        )
+        logger.info(f"Instagram webhook received", platform="instagram", payload_size=payload_size)
 
         # Extract messages from payload
         messages = extract_instagram_messages(payload)
@@ -315,29 +287,16 @@ async def instagram_webhook_handler(
         processing_time = time.time() - start_time
 
         # Log successful processing
-        webhook_logger.log_webhook_processed(
-            platform="instagram",
-            webhook_type="messages",
-            processing_time=processing_time,
-            messages_extracted=messages_count
-        )
+        logger.info(f"Instagram webhook processed",
+                   platform="instagram",
+                   processing_time=processing_time,
+                   messages_extracted=messages_count)
 
         return {"status": "received", "messages_count": messages_count}
 
     except Exception as e:
         processing_time = time.time() - start_time
-        webhook_logger.log_webhook_error(
-            platform="instagram",
-            webhook_type="messages",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        logger.error(
-            "instagram_webhook_processing_error",
-            error=str(e),
-            processing_time=processing_time,
-            exc_info=True
-        )
+        logger.error(f"Instagram webhook processing error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed"
@@ -361,18 +320,10 @@ async def process_facebook_messages(messages: List[Dict[str, Any]], raw_payload:
         )
 
         if response.status_code != 200:
-            logger.error(
-                "facebook_message_processing_error",
-                status_code=response.status_code,
-                response=response.text
-            )
+            logger.error(f"Facebook message processing error: {response.status_code}")
 
     except Exception as e:
-        logger.error(
-            "facebook_message_background_processing_error",
-            error=str(e),
-            exc_info=True
-        )
+        logger.error(f"Facebook message background processing error: {str(e)}")
 
 
 async def process_whatsapp_messages(messages: List[Dict[str, Any]], raw_payload: Dict[str, Any]):
@@ -391,18 +342,10 @@ async def process_whatsapp_messages(messages: List[Dict[str, Any]], raw_payload:
         )
 
         if response.status_code != 200:
-            logger.error(
-                "whatsapp_message_processing_error",
-                status_code=response.status_code,
-                response=response.text
-            )
+            logger.error(f"WhatsApp message processing error: {response.status_code}")
 
     except Exception as e:
-        logger.error(
-            "whatsapp_message_background_processing_error",
-            error=str(e),
-            exc_info=True
-        )
+        logger.error(f"WhatsApp message background processing error: {str(e)}")
 
 
 async def process_instagram_messages(messages: List[Dict[str, Any]], raw_payload: Dict[str, Any]):
@@ -421,18 +364,10 @@ async def process_instagram_messages(messages: List[Dict[str, Any]], raw_payload
         )
 
         if response.status_code != 200:
-            logger.error(
-                "instagram_message_processing_error",
-                status_code=response.status_code,
-                response=response.text
-            )
+            logger.error(f"Instagram message processing error: {response.status_code}")
 
     except Exception as e:
-        logger.error(
-            "instagram_message_background_processing_error",
-            error=str(e),
-            exc_info=True
-        )
+        logger.error(f"Instagram message background processing error: {str(e)}")
 
 
 # Message extraction functions
@@ -463,11 +398,7 @@ def extract_facebook_messages(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                     messages.append(message_data)
 
     except Exception as e:
-        logger.error(
-            "facebook_message_extraction_error",
-            error=str(e),
-            payload_preview=str(payload)[:500]
-        )
+        logger.error(f"Facebook message extraction error: {str(e)}")
 
     return messages
 
@@ -499,11 +430,7 @@ def extract_whatsapp_messages(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                         messages.append(message_data)
 
     except Exception as e:
-        logger.error(
-            "whatsapp_message_extraction_error",
-            error=str(e),
-            payload_preview=str(payload)[:500]
-        )
+        logger.error(f"WhatsApp message extraction error: {str(e)}")
 
     return messages
 
@@ -530,11 +457,7 @@ def extract_instagram_messages(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                     messages.append(message_data)
 
     except Exception as e:
-        logger.error(
-            "instagram_message_extraction_error",
-            error=str(e),
-            payload_preview=str(payload)[:500]
-        )
+        logger.error(f"Instagram message extraction error: {str(e)}")
 
     return messages
 
