@@ -533,39 +533,48 @@ async def get_status(auth_data: Dict = Depends(authenticate_request)):
 
 # Facebook Webhook Endpoints
 @app.get("/webhooks/facebook")
-async def facebook_webhook_verify(
-    request: Request,
-    hub_mode: str = None,
-    hub_challenge: str = None,
-    hub_verify_token: str = None
-):
+async def facebook_webhook_verify(request: Request):
     """Verify Facebook webhook endpoint"""
 
+    # Get query parameters - Facebook uses dots in parameter names
+    query_params = dict(request.query_params)
+
+    # Facebook sends: hub.mode, hub.challenge, hub.verify_token
+    mode = query_params.get("hub.mode") or query_params.get("hub_mode")
+    challenge = query_params.get("hub.challenge") or query_params.get("hub_challenge")
+    verify_token_param = query_params.get("hub.verify_token") or query_params.get("hub_verify_token")
+
     # Get verify token from environment or fallback
-    verify_token = os.getenv("FACEBOOK_VERIFY_TOKEN", "test-verify-token-12345")
+    expected_token = os.getenv("FACEBOOK_VERIFY_TOKEN", "test-verify-token-12345")
 
     logger.info("Facebook webhook verification request",
-                hub_mode=hub_mode,
-                hub_verify_token=hub_verify_token,
-                expected_token=verify_token)
+                mode=mode,
+                challenge=challenge,
+                verify_token=verify_token_param,
+                expected_token=expected_token,
+                query_params=query_params)
 
-    if hub_mode != "subscribe" or not hub_challenge:
+    if mode != "subscribe" or not challenge:
+        logger.warning("Invalid webhook verification parameters",
+                     mode=mode,
+                     challenge=challenge,
+                     query_params=query_params)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid webhook verification request"
         )
 
-    if not hub_verify_token or hub_verify_token != verify_token:
+    if not verify_token_param or verify_token_param != expected_token:
         logger.warning("Facebook webhook token mismatch",
-                      received=hub_verify_token,
-                      expected=verify_token)
+                      received=verify_token_param,
+                      expected=expected_token)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid verify token"
         )
 
-    logger.info("Facebook webhook verified successfully", challenge=hub_challenge)
-    return Response(content=hub_challenge, media_type="text/plain")
+    logger.info("Facebook webhook verified successfully", challenge=challenge)
+    return Response(content=challenge, media_type="text/plain")
 
 @app.post("/webhooks/facebook")
 async def facebook_webhook_handler(request: Request):
