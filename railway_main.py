@@ -605,17 +605,17 @@ async def facebook_webhook_handler(request: Request):
 
         logger.info("Facebook messages extracted", count=len(messages))
 
-        # Process each message (send to AI service for analysis)
+        # Process each message (send to AI service for analysis and response generation)
+        responses = []
         for message in messages:
             try:
                 # Forward to AI/NLP service for processing
-                service = get_gateway_service()
-
-                # Get AI/NLP service URL from environment or use Railway URL
                 ai_nlp_url = os.getenv("AI_NLP_URL", "https://ai-nlp-service-production.up.railway.app")
+                response_generator_url = os.getenv("RESPONSE_GENERATOR_URL", "https://responce-generator-production.up.railway.app")
 
+                # Step 1: Analyze message with AI/NLP service
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
+                    ai_response = await client.post(
                         f"{ai_nlp_url}/api/v1/process/text",
                         json={
                             "text": message["text"],
@@ -623,26 +623,84 @@ async def facebook_webhook_handler(request: Request):
                         }
                     )
 
-                    if response.status_code == 200:
-                        ai_result = response.json()
-                        logger.info("Message processed by AI service",
-                                   sender_id=message["sender_id"],
-                                   text=message["text"][:50] + "...",
-                                   intent=ai_result.get("results", {}).get("intent", {}).get("intent"),
-                                   confidence=ai_result.get("results", {}).get("intent", {}).get("confidence"))
-                    else:
+                    if ai_response.status_code != 200:
                         logger.warning("AI service returned error",
-                                     status_code=response.status_code,
-                                     response=response.text)
+                                     status_code=ai_response.status_code,
+                                     response=ai_response.text)
+                        continue
+
+                    ai_result = ai_response.json()
+
+                    # Step 2: Generate response using the response generator
+                    response_data = {
+                        "message": message["text"],
+                        "context": {
+                            "intent": ai_result['results']['intent']['intent'],
+                            "entities": ai_result['results'].get('entities', {}).get('entities', []),
+                            "sentiment": ai_result['results'].get('sentiment', {}),
+                            "language": ai_result['results'].get('language', {}),
+                            "platform": "facebook",
+                            "user_id": message["sender_id"]
+                        },
+                        "user_id": message["sender_id"]
+                    }
+
+                    response_response = await client.post(
+                        f"{response_generator_url}/api/v1/generate",
+                        json=response_data
+                    )
+
+                    if response_response.status_code == 200:
+                        response_result = response_response.json()
+                        bot_response = response_result.get("response", "I understand you're looking for help. Let me assist you with that.")
+
+                        responses.append({
+                            "recipient_id": message["sender_id"],
+                            "message_text": bot_response,
+                            "original_message": message["text"],
+                            "intent": ai_result['results']['intent']['intent'],
+                            "confidence": ai_result['results']['intent']['confidence']
+                        })
+
+                        logger.info("Message processed and response generated",
+                                   sender_id=message["sender_id"],
+                                   original_text=message["text"][:50] + "...",
+                                   intent=ai_result['results']['intent']['intent'],
+                                   bot_response=bot_response[:50] + "...")
+
+                        # TODO: Send response back to Facebook using Facebook API
+                        # This requires FACEBOOK_PAGE_ACCESS_TOKEN to be configured
+
+                    else:
+                        logger.warning("Response generator returned error",
+                                     status_code=response_response.status_code,
+                                     response=response_response.text)
+                        # Fallback response
+                        responses.append({
+                            "recipient_id": message["sender_id"],
+                            "message_text": f"I understand your {ai_result['results']['intent']['intent']} request. Let me help you with that.",
+                            "original_message": message["text"],
+                            "intent": ai_result['results']['intent']['intent'],
+                            "confidence": ai_result['results']['intent']['confidence']
+                        })
 
             except Exception as e:
-                logger.error("Failed to process message with AI service",
+                logger.error("Failed to process message with AI services",
                            error=str(e),
                            sender_id=message["sender_id"])
+                # Fallback response
+                responses.append({
+                    "recipient_id": message["sender_id"],
+                    "message_text": "I'm here to help! Could you tell me more about what you need?",
+                    "original_message": message["text"],
+                    "error": str(e)
+                })
 
         return {
             "status": "ok",
             "messages_processed": len(messages),
+            "responses_generated": len(responses),
+            "responses": responses,
             "timestamp": datetime.utcnow().isoformat()
         }
 
