@@ -531,6 +531,115 @@ async def get_status(auth_data: Dict = Depends(authenticate_request)):
         "version": "1.0.0"
     }
 
+# Facebook Webhook Endpoints
+@app.get("/webhooks/facebook")
+async def facebook_webhook_verify(
+    request: Request,
+    hub_mode: str = None,
+    hub_challenge: str = None,
+    hub_verify_token: str = None
+):
+    """Verify Facebook webhook endpoint"""
+
+    # Get verify token from environment or fallback
+    verify_token = os.getenv("FACEBOOK_VERIFY_TOKEN", "test-verify-token-12345")
+
+    logger.info("Facebook webhook verification request",
+                hub_mode=hub_mode,
+                hub_verify_token=hub_verify_token,
+                expected_token=verify_token)
+
+    if hub_mode != "subscribe" or not hub_challenge:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid webhook verification request"
+        )
+
+    if not hub_verify_token or hub_verify_token != verify_token:
+        logger.warning("Facebook webhook token mismatch",
+                      received=hub_verify_token,
+                      expected=verify_token)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid verify token"
+        )
+
+    logger.info("Facebook webhook verified successfully", challenge=hub_challenge)
+    return Response(content=hub_challenge, media_type="text/plain")
+
+@app.post("/webhooks/facebook")
+async def facebook_webhook_handler(request: Request):
+    """Handle Facebook webhook events"""
+
+    try:
+        # Get request body
+        body = await request.body()
+        payload = json.loads(body.decode('utf-8'))
+
+        logger.info("Facebook webhook received", payload_size=len(body))
+
+        # Extract messages from payload
+        messages = []
+        for entry in payload.get("entry", []):
+            for messaging in entry.get("messaging", []):
+                if "message" in messaging and "text" in messaging["message"]:
+                    message_data = {
+                        "sender_id": messaging["sender"]["id"],
+                        "recipient_id": messaging["recipient"]["id"],
+                        "message_id": messaging["message"]["mid"],
+                        "text": messaging["message"]["text"],
+                        "timestamp": messaging.get("timestamp"),
+                        "platform": "facebook",
+                        "page_id": entry["id"]
+                    }
+                    messages.append(message_data)
+
+        logger.info("Facebook messages extracted", count=len(messages))
+
+        # Process each message (send to AI service for analysis)
+        for message in messages:
+            try:
+                # Forward to AI/NLP service for processing
+                ai_service = get_gateway_service()
+                ai_result = await ai_service.proxy_request(
+                    "ai-nlp-service",
+                    "/api/v1/process/text",
+                    "POST",
+                    data={
+                        "text": message["text"],
+                        "features": ["intent", "entities", "sentiment", "language"]
+                    }
+                )
+
+                logger.info("Message processed by AI service",
+                           sender_id=message["sender_id"],
+                           intent=ai_result.get("results", {}).get("intent", {}).get("intent"),
+                           confidence=ai_result.get("results", {}).get("intent", {}).get("confidence"))
+
+            except Exception as e:
+                logger.error("Failed to process message with AI service",
+                           error=str(e),
+                           sender_id=message["sender_id"])
+
+        return {
+            "status": "ok",
+            "messages_processed": len(messages),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except json.JSONDecodeError:
+        logger.error("Invalid JSON in Facebook webhook")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload"
+        )
+    except Exception as e:
+        logger.error("Facebook webhook processing error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed"
+        )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
