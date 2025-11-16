@@ -232,7 +232,7 @@ class GatewayService:
 
 # Global instances
 redis_manager = RedisManager()
-gateway_service = None
+gateway_service: GatewayService = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -253,6 +253,24 @@ async def lifespan(app: FastAPI):
         await redis_manager.client.close()
 
     logger.info("Gateway Service shutdown complete")
+
+# Dependency injection
+def get_gateway_service() -> GatewayService:
+    """Get gateway service instance"""
+    if gateway_service is None:
+        raise HTTPException(status_code=503, detail="Gateway service not initialized")
+    return gateway_service
+
+def get_auth_service() -> AuthService:
+    """Get auth service instance"""
+    service = get_gateway_service()
+    return service.auth_service
+
+async def authenticate_request(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    """Authenticate incoming request"""
+    auth_service = get_auth_service()
+    token = credentials.credentials
+    return auth_service.verify_token(token)
 
 # FastAPI application
 app = FastAPI(
@@ -305,7 +323,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    services_health = await gateway_service.service_registry.health_check()
+    service = get_gateway_service()
+    services_health = await service.service_registry.health_check()
 
     all_healthy = all(status == "healthy" for status in services_health.values())
 
@@ -316,12 +335,12 @@ async def health_check():
     )
 
 @app.post("/auth/token", response_model=AuthResponse)
-async def create_token(request: AuthRequest):
+async def create_token(request: AuthRequest, service: GatewayService = Depends(get_gateway_service)):
     """Create authentication token"""
     # In a real implementation, you would validate the API key
     # For now, we'll create a token for any user_id
 
-    token = gateway_service.auth_service.create_token(request.user_id)
+    token = service.auth_service.create_token(request.user_id)
 
     return AuthResponse(
         token=token,
@@ -330,11 +349,13 @@ async def create_token(request: AuthRequest):
     )
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.authenticate_request)):
+async def chat(request: ChatRequest, auth_data: Dict = Depends(authenticate_request)):
     """Main chat endpoint"""
     try:
+        service = get_gateway_service()
+
         # Rate limiting
-        if not await gateway_service.rate_limit_request(auth_data["sub"]):
+        if not await service.rate_limit_request(auth_data["sub"]):
             raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
         start_time = time.time()
@@ -342,7 +363,7 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
 
         # Create or get conversation
         if not request.conversation_id:
-            conversation_data = await gateway_service.route_to_service(
+            conversation_data = await service.route_to_service(
                 "conversation_manager",
                 "/api/v1/conversations",
                 method="POST",
@@ -353,7 +374,7 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
             conversation_id = request.conversation_id
 
         # Add user message to conversation
-        await gateway_service.route_to_service(
+        await service.route_to_service(
             "conversation_manager",
             f"/api/v1/conversations/{conversation_id}/messages",
             method="POST",
@@ -365,7 +386,7 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
         )
 
         # Process message through NLP
-        nlp_result = await gateway_service.route_to_service(
+        nlp_result = await service.route_to_service(
             "ai_nlp",
             "/api/v1/process/text",
             method="POST",
@@ -377,7 +398,7 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
         )
 
         # Generate response
-        response_data = await gateway_service.route_to_service(
+        response_data = await service.route_to_service(
             "response_generator",
             "/api/v1/generate",
             method="POST",
@@ -391,7 +412,7 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
         )
 
         # Add assistant message to conversation
-        message_data = await gateway_service.route_to_service(
+        message_data = await service.route_to_service(
             "conversation_manager",
             f"/api/v1/conversations/{conversation_id}/messages",
             method="POST",
@@ -423,10 +444,11 @@ async def chat(request: ChatRequest, auth_data: Dict = Depends(gateway_service.a
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/v1/conversations/{conversation_id}")
-async def get_conversation(conversation_id: str, auth_data: Dict = Depends(gateway_service.authenticate_request)):
+async def get_conversation(conversation_id: str, auth_data: Dict = Depends(authenticate_request)):
     """Get conversation details"""
     try:
-        return await gateway_service.route_to_service(
+        service = get_gateway_service()
+        return await service.route_to_service(
             "conversation_manager",
             f"/api/v1/conversations/{conversation_id}"
         )
@@ -438,11 +460,12 @@ async def get_conversation(conversation_id: str, auth_data: Dict = Depends(gatew
 async def get_conversation_messages(
     conversation_id: str,
     limit: int = 50,
-    auth_data: Dict = Depends(gateway_service.authenticate_request)
+    auth_data: Dict = Depends(authenticate_request)
 ):
     """Get conversation messages"""
     try:
-        return await gateway_service.route_to_service(
+        service = get_gateway_service()
+        return await service.route_to_service(
             "conversation_manager",
             f"/api/v1/conversations/{conversation_id}/messages?limit={limit}"
         )
@@ -454,7 +477,7 @@ async def get_conversation_messages(
 async def get_user_conversations(
     user_id: str,
     limit: int = 10,
-    auth_data: Dict = Depends(gateway_service.authenticate_request)
+    auth_data: Dict = Depends(authenticate_request)
 ):
     """Get user conversations"""
     try:
@@ -462,7 +485,8 @@ async def get_user_conversations(
         if auth_data["sub"] != user_id:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        return await gateway_service.route_to_service(
+        service = get_gateway_service()
+        return await service.route_to_service(
             "conversation_manager",
             f"/api/v1/users/{user_id}/conversations?limit={limit}"
         )
@@ -475,11 +499,12 @@ async def get_user_conversations(
 @app.post("/api/v1/nlp/process")
 async def process_text(
     request: Dict[str, Any],
-    auth_data: Dict = Depends(gateway_service.authenticate_request)
+    auth_data: Dict = Depends(authenticate_request)
 ):
     """Process text through NLP service"""
     try:
-        return await gateway_service.route_to_service(
+        service = get_gateway_service()
+        return await service.route_to_service(
             "ai_nlp",
             "/api/v1/process/text",
             method="POST",
@@ -490,9 +515,10 @@ async def process_text(
         raise HTTPException(status_code=500, detail="Failed to process text")
 
 @app.get("/api/v1/status")
-async def get_status(auth_data: Dict = Depends(gateway_service.authenticate_request)):
+async def get_status(auth_data: Dict = Depends(authenticate_request)):
     """Get gateway and services status"""
-    services_health = await gateway_service.service_registry.health_check()
+    service = get_gateway_service()
+    services_health = await service.service_registry.health_check()
 
     return {
         "gateway": "running",
