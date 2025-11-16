@@ -100,7 +100,7 @@ Respond naturally as Abu Ahmad would - short, friendly, human-like response. Don
                 return get_fallback_palestinian_response(original_text, intent, entities)
 
     except Exception as e:
-        logger.error("Failed to generate AI response", error=str(e)
+        logger.error("Failed to generate AI response", error=str(e) )
         return get_fallback_palestinian_response(original_text, intent, entities)
 
 def get_fallback_palestinian_response(original_text: str, intent: str, entities: list = None) -> str:
