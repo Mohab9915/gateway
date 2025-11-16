@@ -609,21 +609,31 @@ async def facebook_webhook_handler(request: Request):
         for message in messages:
             try:
                 # Forward to AI/NLP service for processing
-                ai_service = get_gateway_service()
-                ai_result = await ai_service.proxy_request(
-                    "ai-nlp-service",
-                    "/api/v1/process/text",
-                    "POST",
-                    data={
-                        "text": message["text"],
-                        "features": ["intent", "entities", "sentiment", "language"]
-                    }
-                )
+                service = get_gateway_service()
 
-                logger.info("Message processed by AI service",
-                           sender_id=message["sender_id"],
-                           intent=ai_result.get("results", {}).get("intent", {}).get("intent"),
-                           confidence=ai_result.get("results", {}).get("intent", {}).get("confidence"))
+                # Get AI/NLP service URL from environment or use Railway URL
+                ai_nlp_url = os.getenv("AI_NLP_URL", "https://ai-nlp-service-production.up.railway.app")
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{ai_nlp_url}/api/v1/process/text",
+                        json={
+                            "text": message["text"],
+                            "features": ["intent", "entities", "sentiment", "language"]
+                        }
+                    )
+
+                    if response.status_code == 200:
+                        ai_result = response.json()
+                        logger.info("Message processed by AI service",
+                                   sender_id=message["sender_id"],
+                                   text=message["text"][:50] + "...",
+                                   intent=ai_result.get("results", {}).get("intent", {}).get("intent"),
+                                   confidence=ai_result.get("results", {}).get("intent", {}).get("confidence"))
+                    else:
+                        logger.warning("AI service returned error",
+                                     status_code=response.status_code,
+                                     response=response.text)
 
             except Exception as e:
                 logger.error("Failed to process message with AI service",
