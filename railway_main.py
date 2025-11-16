@@ -25,6 +25,102 @@ import jwt
 
 logger = structlog.get_logger()
 
+# Palestinian/Jordanian dialect response generator
+def generate_palestinian_response(original_text: str, intent: str, entities: list = None, language: str = "en") -> str:
+    """Generate natural human-like responses in Palestinian/Jordanian dialect"""
+
+    # Extract entities for more personalized responses
+    product_mentioned = None
+    price_mentioned = None
+
+    if entities:
+        for entity in entities:
+            if entity.get('type') == 'product':
+                product_mentioned = entity.get('text')
+            elif entity.get('type') == 'price':
+                price_mentioned = entity.get('text')
+
+    # Palestinian/Jordanian dialect responses
+    if intent == "greeting":
+        greetings = [
+            "أهلاً وسهلاً! كيفك؟ أنا هنا عشان ساعدك 😊",
+            "يا هلا! شو أخبارك؟ تفضل اسأل وش تحب",
+            "أهلاً بيكم! شسوي لك اليوم؟",
+            "مرحباً! كيف يمكنني أخدمك؟"
+        ]
+        return random.choice(greetings)
+
+    elif intent == "product_inquiry":
+        if product_mentioned:
+            if "لابتوب" in product_mentioned.lower() or "كمبيوتر" in product_mentioned.lower():
+                responses = [
+                    f"الله! شغلة اللابتوب؟ عندي أحسن انواع وأسعار كويسة! شو نوع بدك بالضبط؟",
+                    f"يلا أخي! اللابتوبات كلها عندي. شو مواصفات تدور عليها؟",
+                    f"أكيد! اللابتوبات حاضرة. كم تحب تدفع تقريباً؟"
+                ]
+                return random.choice(responses)
+            elif "موبايل" in product_mentioned.lower() or "هاتف" in product_mentioned.lower():
+                responses = [
+                    f"الموبايلات كلها موجودة! يا حليلك، شو مودل بدك؟",
+                    f"أكيد! عندي أحدث الموبايلات. شو ميزات تدور عليها؟",
+                    f"يلا صاحبي! الموبايلات حاضرة. شو نوع بدك؟"
+                ]
+                return random.choice(responses)
+        return "أكيد! شو نوع السلعة تدور عليها؟ بفهمك اللي بدك بالضبط"
+
+    elif intent == "price_inquiry":
+        if price_mentioned:
+            responses = [
+                f"هووو! {price_mentioned} شغلة حلوة! ممكن ألاقيك أفضل من هيك بس حسب المواصفات",
+                f"مش سيئ السعر! ممكن نتفاوض شوي. شو المواصفات كلها؟",
+                f"يسلمو! {price_mentioned} بس ممكن نعمل خصم لو بتيجي كمية"
+            ]
+            return random.choice(responses)
+        return "الأسعار كويسة جداً! شو بتحب تعرف سعره بالضبط؟"
+
+    elif intent == "support_request":
+        responses = [
+            "لأ ولأ! شو المشكلة؟ أنا هنا أحلها لك حالاً",
+            "يا حبيبي! وش قاعد؟ إكتبلي المشكلة وبحلها لك",
+            "خليك بخير! شو في الأمر؟ بكل سرور أساعدك"
+        ]
+        return random.choice(responses)
+
+    elif intent == "order_status":
+        responses = [
+            "يلا خيي! شو رقم طلبك؟ بفحصلك حالاً",
+            "أكيد! شو رقم الطلب؟ بعملك فحص سريع",
+            "طيب! رقم الطلب بلازمني شوي"
+        ]
+        return random.choice(responses)
+
+    elif intent == "buying_intent":
+        responses = [
+            "برافو عليك! ماشي الله! شو بدك تشتري بالضبط؟",
+            "يا سلما! هون المكان صح! شو عندك بالزمن؟",
+            "شغل شايب! أكيد بخدمك! شو السلعة اللي بدك؟"
+        ]
+        return random.choice(responses)
+
+    else:  # Default/fallback
+        # Try to detect if original text is in Arabic
+        if any(char in original_text for char in 'ابتجحخدرزسشصضطظعغفقكلمنهوىي'):
+            arabic_responses = [
+                "فهمتك قصدك! تفضل اكتبلي بشكل ثاني عشان أفهمك أفضل",
+                "يا هلا! بكل سرور أساعدك. عادي توضح أكثر",
+                "خليك بخير! شو بدك بالضبط؟ أنا جاهز"
+            ]
+            return random.choice(arabic_responses)
+        else:
+            english_responses = [
+                "Gotcha! Let me help you with that. What exactly do you need?",
+                "Sure thing! How can I assist you today?",
+                "I got you covered! Tell me more about what you're looking for"
+            ]
+            return random.choice(english_responses)
+
+import random
+
 # Environment variables
 PORT = os.getenv("PORT", "8000")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -631,58 +727,29 @@ async def facebook_webhook_handler(request: Request):
 
                     ai_result = ai_response.json()
 
-                    # Step 2: Generate response using the response generator
-                    response_data = {
-                        "message": message["text"],
-                        "context": {
-                            "intent": ai_result['results']['intent']['intent'],
-                            "entities": ai_result['results'].get('entities', {}).get('entities', []),
-                            "sentiment": ai_result['results'].get('sentiment', {}),
-                            "language": ai_result['results'].get('language', {}),
-                            "platform": "facebook",
-                            "user_id": message["sender_id"]
-                        },
-                        "user_id": message["sender_id"]
-                    }
+                    # Step 2: Generate natural human-like response in Arabic/Palestinian dialect
+                    intent = ai_result['results']['intent']['intent']
+                    entities = ai_result['results'].get('entities', {}).get('entities', [])
+                    detected_language = ai_result['results'].get('language', {}).get('language', 'en')
+                    original_text = message["text"]
 
-                    response_response = await client.post(
-                        f"{response_generator_url}/api/v1/generate",
-                        json=response_data
-                    )
+                    # Generate natural Palestinian/Jordanian dialect response
+                    bot_response = generate_palestinian_response(original_text, intent, entities, detected_language)
 
-                    if response_response.status_code == 200:
-                        response_result = response_response.json()
-                        bot_response = response_result.get("response", "I understand you're looking for help. Let me assist you with that.")
+                    responses.append({
+                        "recipient_id": message["sender_id"],
+                        "message_text": bot_response,
+                        "original_message": message["text"],
+                        "intent": intent,
+                        "confidence": ai_result['results']['intent']['confidence']
+                    })
 
-                        responses.append({
-                            "recipient_id": message["sender_id"],
-                            "message_text": bot_response,
-                            "original_message": message["text"],
-                            "intent": ai_result['results']['intent']['intent'],
-                            "confidence": ai_result['results']['intent']['confidence']
-                        })
-
-                        logger.info("Message processed and response generated",
-                                   sender_id=message["sender_id"],
-                                   original_text=message["text"][:50] + "...",
-                                   intent=ai_result['results']['intent']['intent'],
-                                   bot_response=bot_response[:50] + "...")
-
-                        # TODO: Send response back to Facebook using Facebook API
-                        # This requires FACEBOOK_PAGE_ACCESS_TOKEN to be configured
-
-                    else:
-                        logger.warning("Response generator returned error",
-                                     status_code=response_response.status_code,
-                                     response=response_response.text)
-                        # Fallback response
-                        responses.append({
-                            "recipient_id": message["sender_id"],
-                            "message_text": f"I understand your {ai_result['results']['intent']['intent']} request. Let me help you with that.",
-                            "original_message": message["text"],
-                            "intent": ai_result['results']['intent']['intent'],
-                            "confidence": ai_result['results']['intent']['confidence']
-                        })
+                    logger.info("Natural response generated",
+                               sender_id=message["sender_id"],
+                               original_text=original_text,
+                               intent=intent,
+                               language=detected_language,
+                               bot_response=bot_response)
 
             except Exception as e:
                 logger.error("Failed to process message with AI services",
